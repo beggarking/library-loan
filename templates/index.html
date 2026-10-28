@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>도서관 대출</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Malgun Gothic", sans-serif; background: #f3f5f9; color: #1d2433; }
+  main { max-width: 720px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 1.6rem; margin: 8px 0 20px; }
+  section { background: #fff; border-radius: 12px; padding: 18px; margin-bottom: 18px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  h2 { font-size: 1.15rem; margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+  label { display: flex; flex-direction: column; font-size: .85rem; color: #4a5568; gap: 4px; }
+  input { font-size: 1rem; padding: 10px; border: 1px solid #cbd2dd; border-radius: 8px; width: 100%; }
+  button { margin-top: 12px; width: 100%; font-size: 1.05rem; font-weight: 700; padding: 12px; border: 0; border-radius: 8px; color: #fff; background: #2b6cb0; cursor: pointer; }
+  button.return { background: #2f855a; }
+  button.list { background: #718096; }
+  .result { display: none; margin-top: 14px; padding: 16px; border-radius: 10px; text-align: center; font-size: 2rem; font-weight: 800; }
+  .result.ok { display: block; background: #e6f6ec; color: #1f7a3d; border: 2px solid #1f7a3d; }
+  .result.fail { display: block; background: #fdeaea; color: #c53030; border: 2px solid #c53030; }
+  .result .overdue { display: block; font-size: 1.5rem; margin-top: 6px; }
+  .result small { display: block; font-size: .95rem; font-weight: 500; margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+  th, td { padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left; }
+  th { background: #f7fafc; font-size: .9rem; }
+  .empty { margin-top: 14px; color: #718096; }
+  .hint { font-size: .85rem; color: #718096; margin: 0 0 10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>도서관 대출</h1>
+  <p class="hint">책: B001 ~ B005 / 날짜: 도서관 문 연 날부터 며칠째 (1 이상 정수) / 대출 기간 14일</p>
+
+  <datalist id="books"><option value="B001"><option value="B002"><option value="B003"><option value="B004"><option value="B005"></datalist>
+
+  <section>
+    <h2>대출하기</h2>
+    <form id="borrow-form">
+      <div class="grid">
+        <label>책 번호<input name="book_id" list="books" required></label>
+        <label>이름<input name="name" required></label>
+        <label>며칠째<input name="day" inputmode="decimal" required></label>
+      </div>
+      <button type="submit">대출</button>
+    </form>
+    <div id="borrow-result" class="result"></div>
+  </section>
+
+  <section>
+    <h2>반납하기</h2>
+    <form id="return-form">
+      <div class="grid">
+        <label>책 번호<input name="book_id" list="books" required></label>
+        <label>이름<input name="name" required></label>
+        <label>며칠째<input name="day" inputmode="decimal" required></label>
+      </div>
+      <button type="submit" class="return">반납</button>
+    </form>
+    <div id="return-result" class="result"></div>
+  </section>
+
+  <section>
+    <h2>대출 목록 보기</h2>
+    <form id="loans-form">
+      <label>이름<input name="name" required></label>
+      <button type="submit" class="list">대출 목록 보기</button>
+    </form>
+    <div id="loans-title" class="empty"></div>
+    <div id="loans"></div>
+  </section>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function showResult(el, ok, detail, overdue) {
+    el.className = "result " + (ok ? "ok" : "fail");
+    el.textContent = ok ? "성공" : "실패";
+    if (overdue !== undefined) {
+      const o = document.createElement("span");
+      o.className = "overdue";
+      o.textContent = "연체 " + overdue + "일";
+      el.appendChild(o);
+    }
+    const s = document.createElement("small");
+    s.textContent = detail;
+    el.appendChild(s);
+  }
+
+  function renderLoans(name, items) {
+    $("loans-title").textContent = name + " 님의 대출 목록";
+    const box = $("loans");
+    box.innerHTML = "";
+    if (!items.length) {
+      const p = document.createElement("p");
+      p.className = "empty";
+      p.textContent = "빌린 책이 없습니다.";
+      box.appendChild(p);
+      return;
+    }
+    const table = document.createElement("table");
+    table.innerHTML = "<thead><tr><th>책 번호</th><th>반납 기한</th></tr></thead>";
+    const tbody = document.createElement("tbody");
+    for (const [bookId, due] of items) {
+      const tr = document.createElement("tr");
+      const b = document.createElement("td");
+      b.textContent = bookId;
+      const d = document.createElement("td");
+      d.textContent = due + "일째까지";
+      tr.append(b, d);
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+    box.appendChild(table);
+  }
+
+  async function post(url, form) {
+    const res = await fetch(url, { method: "POST", body: new FormData(form) });
+    return res.json();
+  }
+
+  $("borrow-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const desc = `${f.name.value} · ${f.book_id.value} · ${f.day.value}일째 대출`;
+    try {
+      const data = await post("/borrow", f);
+      showResult($("borrow-result"), data.ok, desc);
+      if (data.ok) renderLoans(f.name.value.trim(), data.loans);
+    } catch (err) {
+      showResult($("borrow-result"), false, "서버 연결 오류");
+    }
+  });
+
+  $("return-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.target;
+    const desc = `${f.name.value} · ${f.book_id.value} · ${f.day.value}일째 반납`;
+    try {
+      const data = await post("/return", f);
+      showResult($("return-result"), data.ok, desc, data.ok ? data.overdue : undefined);
+      if (data.ok) renderLoans(f.name.value.trim(), data.loans);
+    } catch (err) {
+      showResult($("return-result"), false, "서버 연결 오류");
+    }
+  });
+
+  $("loans-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const name = e.target.name.value;
+    const data = await (await fetch("/loans?" + new URLSearchParams({ name }))).json();
+    renderLoans(name.trim(), data.loans);
+  });
+</script>
+</body>
+</html>

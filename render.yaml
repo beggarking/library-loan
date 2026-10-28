@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: library-loan
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # 대출 기록을 메모리에 기억하므로 서버 프로세스는 1개만 사용
+    startCommand: gunicorn app:app --workers 1 --bind 0.0.0.0:$PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.10
