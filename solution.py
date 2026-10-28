@@ -19,14 +19,13 @@ class LibraryLoan:
     def __init__(self):
         # book_id -> (name, 빌린 날)
         self._loans = {}
-        # [name, 대출 정지 마지막 날] 목록 (이름이 어떤 값이어도 에러 없도록 리스트로 보관)
+        # (name, 정지 시작일, 정지 마지막 날) 목록 (이름이 어떤 값이어도 에러 없도록 리스트로 보관)
         self._suspensions = []
 
-    def _suspended_until(self, name):
-        for n, until in self._suspensions:
-            if n == name:
-                return until
-        return 0
+    def _is_suspended(self, name, day):
+        # 정지 기간은 "반납한 날부터" 이므로 그 구간 안의 날짜만 막음 (날짜 순서는 검사하지 않음).
+        # 기간이 겹치면 구간이 이어져 더 늦게 끝나는 쪽까지 막히고, 일수를 더하지는 않음
+        return any(n == name and start <= day <= end for n, start, end in self._suspensions)
 
     def _held_by(self, name):
         # 그 사람이 지금 빌리고 있는 (book_id, 반납 기한) 목록
@@ -50,7 +49,7 @@ class LibraryLoan:
         if any(day > due for _, due in held):
             return False
         # 6. 대출 정지 기간
-        if day <= self._suspended_until(name):
+        if self._is_suspended(name, day):
             return False
 
         self._loans[book_id] = (name, day)
@@ -72,15 +71,8 @@ class LibraryLoan:
         del self._loans[book_id]
 
         if overdue > 0:
-            # 반납한 날부터 연체 일수만큼 정지 → 마지막 정지일 = day + overdue - 1
-            # 정지 기간이 겹치면 더 늦게 끝나는 쪽 (더하지 않음)
-            until = day + overdue - 1
-            for entry in self._suspensions:
-                if entry[0] == name:
-                    entry[1] = max(entry[1], until)
-                    break
-            else:
-                self._suspensions.append([name, until])
+            # 반납한 날부터 연체 일수만큼 정지 → day ~ day + overdue - 1
+            self._suspensions.append((name, day, day + overdue - 1))
         return overdue
 
     def get_loans(self, name):
